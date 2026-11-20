@@ -53,7 +53,7 @@ class TcpMessageTransport(
                 establish(socket)
             }
         } catch (e: Exception) {
-            if (running) onStatus("Ошибка TCP-сервера: ${e.localizedMessage ?: "неизвестная ошибка"}")
+            if (running) onStatus("Ошибка TCP-сервера: \${e.localizedMessage ?: "неизвестная ошибка"}")
         } finally {
             serverSocket = null
         }
@@ -98,7 +98,7 @@ class TcpMessageTransport(
                 else onStatus("Получено слишком длинное сообщение — отклонено")
             }
         } catch (e: Exception) {
-            if (running) onStatus("Ошибка приёма: ${e.localizedMessage ?: "соединение прервано"}")
+            if (running) onStatus("Ошибка приёма: \${e.localizedMessage ?: "соединение прервано"}")
         } finally {
             connected = false
             writer = null
@@ -110,7 +110,7 @@ class TcpMessageTransport(
 
     @Synchronized
     fun sendMessage(text: String): Boolean {
-        val safeText = text.trim().replace("\\n", " ").replace("\\r", " ")
+        val safeText = text.trim().replace("\n", " ").replace("\r", " ")
         if (!connected || safeText.isEmpty() || safeText.length > MAX_LINE_LENGTH) {
             onStatus(if (!connected) "Канал сообщений ещё не готов" else "Пустое или слишком длинное сообщение")
             return false
@@ -123,7 +123,7 @@ class TcpMessageTransport(
             } ?: return false
             true
         } catch (e: Exception) {
-            onStatus("Не удалось отправить: ${e.localizedMessage ?: "ошибка"}")
+            onStatus("Не удалось отправить: \${e.localizedMessage ?: "ошибка"}")
             false
         }
     }
