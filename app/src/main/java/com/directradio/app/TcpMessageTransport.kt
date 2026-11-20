@@ -10,15 +10,17 @@ import java.net.Socket
 import java.util.concurrent.Executors
 
 /**
- * Minimal text transport over the Wi-Fi Direct group.
- * The group owner accepts one peer; the client connects to the owner's P2P address.
+ * First text-chat transport over a Wi-Fi Direct group.
+ * Current MVP supports one connected peer per group owner; multi-peer routing is not implemented.
  */
 class TcpMessageTransport(
-    private val onStatus: (String) -> Unit
+    private val onStatus: (String) -> Unit,
+    private val onMessage: (String) -> Unit
 ) {
     companion object {
         private const val PORT = 8988
         private const val CONNECT_TIMEOUT_MS = 5_000
+        private const val MAX_LINE_LENGTH = 4_000
     }
 
     private val executor = Executors.newCachedThreadPool()
@@ -42,7 +44,7 @@ class TcpMessageTransport(
             ServerSocket(PORT).use { server ->
                 serverSocket = server
                 if (!running) return
-                onStatus("Wi-Fi Direct активен. Ожидаем второй телефон…")
+                onStatus("Wi-Fi Direct активен. Ожидаем участника…")
                 val socket = server.accept()
                 if (!running) {
                     socket.close()
@@ -51,7 +53,7 @@ class TcpMessageTransport(
                 establish(socket)
             }
         } catch (e: Exception) {
-            if (running) onStatus("Ошибка TCP-сервера: ${e.localizedMessage ?: "неизвестная ошибка"}")
+            if (running) onStatus("Ошибка TCP-сервера: \${e.localizedMessage ?: "неизвестная ошибка"}")
         } finally {
             serverSocket = null
         }
@@ -65,7 +67,7 @@ class TcpMessageTransport(
         }
         while (running && !connected) {
             try {
-                onStatus("Подключаем канал данных…")
+                onStatus("Подключаем канал сообщений…")
                 val socket = Socket()
                 socket.connect(InetSocketAddress(ownerAddress, PORT), CONNECT_TIMEOUT_MS)
                 if (!running) {
@@ -76,7 +78,7 @@ class TcpMessageTransport(
                 return
             } catch (e: Exception) {
                 if (running) {
-                    onStatus("Ожидаем TCP-сервер второго телефона…")
+                    onStatus("Ожидаем TCP-сервер участника…")
                     try { Thread.sleep(1_500) } catch (_: InterruptedException) { return }
                 }
             }
@@ -87,39 +89,42 @@ class TcpMessageTransport(
         peerSocket = socket
         writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8))
         connected = true
-        onStatus("Канал данных установлен")
+        onStatus("Канал сообщений установлен")
         try {
             val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
             while (running) {
                 val line = reader.readLine() ?: break
-                onStatus("Получено сообщение: $line")
+                if (line.length <= MAX_LINE_LENGTH) onMessage(line)
+                else onStatus("Получено слишком длинное сообщение — отклонено")
             }
         } catch (e: Exception) {
-            if (running) onStatus("Ошибка приёма данных: ${e.localizedMessage ?: "соединение прервано"}")
+            if (running) onStatus("Ошибка приёма: \${e.localizedMessage ?: "соединение прервано"}")
         } finally {
             connected = false
             writer = null
             peerSocket = null
             try { socket.close() } catch (_: Exception) { }
-            if (running) onStatus("Канал данных разорван")
+            if (running) onStatus("Канал сообщений разорван")
         }
     }
 
     @Synchronized
-    fun sendTestMessage() {
-        if (!connected) {
-            onStatus("Канал данных ещё не готов")
-            return
+    fun sendMessage(text: String): Boolean {
+        val safeText = text.trim().replace("\n", " ").replace("\r", " ")
+        if (!connected || safeText.isEmpty() || safeText.length > MAX_LINE_LENGTH) {
+            onStatus(if (!connected) "Канал сообщений ещё не готов" else "Пустое или слишком длинное сообщение")
+            return false
         }
-        try {
+        return try {
             writer?.apply {
-                write("DirectRadio: тест связи")
+                write(safeText)
                 newLine()
                 flush()
-            }
-            onStatus("Тестовое сообщение отправлено")
+            } ?: return false
+            true
         } catch (e: Exception) {
-            onStatus("Не удалось отправить: ${e.localizedMessage ?: "ошибка"}")
+            onStatus("Не удалось отправить: \${e.localizedMessage ?: "ошибка"}")
+            false
         }
     }
 
