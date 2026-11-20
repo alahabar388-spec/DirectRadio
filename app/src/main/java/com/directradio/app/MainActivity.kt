@@ -34,7 +34,9 @@ private val Green = Color(0xFF25B879)
 
 class MainActivity : ComponentActivity() {
     private var p2pState by mutableStateOf(P2pUiState())
+    private var transportStatus by mutableStateOf("Канал данных ещё не запущен")
     private lateinit var p2p: P2pController
+    private lateinit var transport: TcpMessageTransport
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result.values.all { it }) p2p.discover()
@@ -43,13 +45,25 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        p2p = P2pController(this) { p2pState = it }
+        transport = TcpMessageTransport { message ->
+            runOnUiThread { transportStatus = message }
+        }
+        p2p = P2pController(this) { newState ->
+            p2pState = newState
+            if (newState.connected) {
+                transport.start(newState.groupOwner, newState.groupOwnerAddress)
+            } else {
+                transport.stop()
+            }
+        }
         p2p.start()
         setContent {
             DirectRadioApp(
                 state = p2pState,
                 onDiscover = { discoverWithPermission() },
-                onConnect = { p2p.connect(it) }
+                onConnect = { p2p.connect(it) },
+                dataStatus = transportStatus,
+                onTestData = { transport.sendTestMessage() }
             )
         }
     }
@@ -65,12 +79,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         p2p.stop()
+        transport.stop()
         super.onDestroy()
     }
 }
 
 @Composable
-private fun DirectRadioApp(state: P2pUiState, onDiscover: () -> Unit, onConnect: (WifiP2pDevice) -> Unit) {
+private fun DirectRadioApp(
+    state: P2pUiState,
+    onDiscover: () -> Unit,
+    onConnect: (WifiP2pDevice) -> Unit,
+    dataStatus: String,
+    onTestData: () -> Unit
+) {
     var channel by remember { mutableStateOf("CHANNEL 01") }
     var isPtt by remember { mutableStateOf(false) }
     MaterialTheme(colorScheme = darkColorScheme(primary = Green, background = Navy, surface = Panel)) {
@@ -107,7 +128,14 @@ private fun DirectRadioApp(state: P2pUiState, onDiscover: () -> Unit, onConnect:
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(state.status, color = Color(0xFFB8C7D1), fontSize = 12.sp)
-                Spacer(Modifier.height(16.dp))
+                Text("КАНАЛ ДАННЫХ: $dataStatus", color = Green, fontSize = 11.sp)
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onTestData,
+                    enabled = state.connected,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("ОТПРАВИТЬ ТЕСТОВОЕ СООБЩЕНИЕ") }
+                Spacer(Modifier.height(10.dp))
                 Button(onClick = onDiscover, modifier = Modifier.fillMaxWidth()) { Text("НАЙТИ УСТРОЙСТВА") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { channel = if (channel == "CHANNEL 01") "CHANNEL 02" else "CHANNEL 01" }, modifier = Modifier.fillMaxWidth()) { Text("СМЕНИТЬ КАНАЛ") }
