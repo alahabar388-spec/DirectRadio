@@ -89,7 +89,8 @@ class MainActivity : ComponentActivity() {
                         chatMessages = chatMessages + ChatMessage(
                             id = System.nanoTime(), text = text, incoming = false, time = now()
                         )
-                    }
+                        true
+                    } else false
                 }
             )
         }
@@ -120,7 +121,7 @@ private fun DirectRadioApp(
     onConnect: (WifiP2pDevice) -> Unit,
     dataStatus: String,
     messages: List<ChatMessage>,
-    onSend: (String) -> Unit
+    onSend: (String) -> Boolean
 ) {
     var channel by remember { mutableStateOf("CHANNEL 01") }
     var isPtt by remember { mutableStateOf(false) }
@@ -203,8 +204,7 @@ private fun DirectRadioApp(
                         onClick = {
                             val text = draft.trim()
                             if (text.isNotEmpty()) {
-                                onSend(text)
-                                draft = ""
+                                if (onSend(text)) draft = ""
                             }
                         },
                         enabled = state.connected && draft.isNotBlank()
